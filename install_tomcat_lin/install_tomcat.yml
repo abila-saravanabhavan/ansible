@@ -1,0 +1,133 @@
+---
+- hosts: webservers
+  become: yes
+  become_user: root
+  gather_facts: yes
+  vars: 
+    port: 8082
+
+  tasks:
+
+  - name: Create /opt/tomcat directory
+    file:
+      path: /opt/tomcat
+      state: directory
+      mode: "u=rwx,g=rwx,o=rwx"
+
+  - name: Download from nexus
+    get_url:
+      url: http://localhost:8081/repository/maven-releases/apache/tomcat/9/tomcat-9.tar.gz
+      username: admin
+      password: admin123
+      force_basic_auth: no
+      dest: /ansible/
+    tags:
+      download
+
+  - name: Unarchive
+    unarchive:
+      src: /ansible/tomcat-9.tar.gz
+      #	src: /my_scripts/tomcat-9.tar.gz
+      dest: /opt/tomcat
+      extra_opts: [--strip-components=1]
+    tags:
+      untar
+   
+
+  - name: Create Group 
+    group:
+      name: tomcat
+      state: present
+    register: group
+  - debug: 
+      msg: The message is {{ group }}
+    
+  - name: Create user 
+    user:
+      name: tomcat
+      state: present
+      group: tomcat
+      shell: /bin/nologin
+      home: /opt/tomcat
+
+  - name: Change group 
+    file:
+      path: /opt/tomcat/{{ item }}
+      recurse: yes
+      group: tomcat
+    with_items: 
+      - conf
+      - bin
+      - lib
+
+  - name: Change owner
+    file:
+      path: /opt/tomcat/{{ item }}
+      recurse: yes
+      owner: tomcat
+    with_items:
+      - logs
+      - temp
+      - webapps
+      - work
+
+  - name: chmod of bin files
+    file: 
+      path: /opt/tomcat/{{ item }}
+      state: directory
+      mode: g+rwx
+      recurse: yes
+    with_items:
+      - conf
+      - bin
+ 
+  - name: Set tomcat.service
+    copy:
+      src: /ansible/tomcat.service
+      dest: /etc/systemd/system/tomcat.service
+
+  - name: Start daemon
+    shell: systemctl daemon-reload
+    register: daemon
+  - debug:
+      msg: The deamon message is {{ daemon }}
+  
+  - name: Start Tomcat
+    shell: systemctl start tomcat
+    register: tomcat
+  - debug:
+      msg: The tomcat message is {{ tomcat }}
+  
+  - name: Lineinfile
+    lineinfile:
+      path: /opt/tomcat/conf/server.xml
+      regexp: '<Connector port="8080"'
+      line: '<Connector port="{{ port }}"'
+ 
+#Change port using template
+# - name: Set port to {{ port }}
+#   template:
+#     src: /ansible/template.j2
+#     dest: /opt/tomcat/conf/server.xml
+#     group: tomcat
+#     owner: root
+#     mode: "u=rwx,g=rwx,o=rwx"
+#   tags:
+#     port
+
+  - name: Add Firewall port
+    shell: firewall-cmd --zone=public --permanent --add-port={{ port }}/tcp
+  
+  - name: Reload Firewall
+    shell: firewall-cmd --reload
+
+  - name: Start daemon
+    shell: systemctl daemon-reload
+
+  - name: Start Tomcat
+    shell: systemctl restart tomcat
+
+          
+
+
+
