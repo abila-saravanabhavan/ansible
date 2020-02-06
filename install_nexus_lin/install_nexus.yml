@@ -1,0 +1,73 @@
+
+
+---
+- hosts: webservers
+  become: yes
+  become_user: root
+  gather_facts: yes
+ 
+
+  tasks:
+
+  - name: Create /app directory
+    file:
+      path: /app
+      state: directory
+      mode: "u=rwx,g=rwx,o=rwx"
+
+  - name: Download from nexus
+    get_url:
+      url: https://download.sonatype.com/nexus/3/latest-unix.tar.gz
+      dest: /ansible/nexus.tar.gz
+    tags:
+      download
+
+  - name: Unarchive
+    unarchive:
+      src: /ansible/nexus.tar.gz
+      dest: /app/
+    tags:
+      untar
+     
+  - name: Rename
+    command: mv /app/nexus-3.20.1-01/ /app/nexus
+    tags:
+      rename
+
+
+  - name: Change owner
+    file:
+      path: /app/{{ item }}
+      recurse: yes
+      owner: nexus
+      group: nexus
+    with_items:
+      - nexus
+      - sonatype-work
+
+
+  - name: Set service
+    copy: 
+      src: /ansible/nexus.service
+      dest: /etc/systemd/system/nexus.service
+
+
+  - name: Lineinfile
+    lineinfile:
+      path: /app/nexus/bin/nexus.rc 
+      regexp: '#run_as_user=""'
+      line: 'run_as_user="nexus"'
+ 
+ 
+  - name: Nexus server
+    shell: chkconfig nexus on
+
+
+  - name: Start nexus
+    shell: systemctl start nexus
+
+  - name: Status nexus
+    shell: systemctl status nexus
+    register: status
+  - debug:
+      msg: The status is {{ status }}
